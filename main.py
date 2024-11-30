@@ -45,49 +45,53 @@ def scale_coordinates(
 
     box_width, box_height = box_dimensions
     frame_width, frame_height = frame_dimensions
-    scaled_coords = [
+    return [
         (coords[0] / box_width) * frame_width,
         (coords[1] / box_height) * frame_height,
         (coords[2] / box_width) * frame_width,
         (coords[3] / box_height) * frame_height,
     ]
-    return scaled_coords
 
 
-def process_frames(int_line: LineString, ext_line: LineString, frames: dict, visitors: dict) -> None:
+def process_frames(int_line: LineString, ext_line: LineString, frames: dict, visitors: dict) -> dict:
     """Обрабатывает кадры и анализирует пересечения с линиями"""
 
+    updated_visitors = visitors.copy()
     for frame_id, frame_data in frames.items():
         timestamp = frame_data["timestamp"]
         detected_people = frame_data["detected"].get("person", [])
-
         for person in detected_people:
             if len(person) > 5:
                 track_id = list(person[-1].values())[0].get("track_id")
                 if track_id:
                     x1, y1, x2, y2 = person[:4]
                     diagonal = LineString([(x1, y1), (x2, y2)])
-
-                    update_visitor_status(diagonal, int_line, ext_line, track_id, timestamp, visitors)
+                    updated_visitors = update_visitor_status(
+                        diagonal, int_line, ext_line, track_id, timestamp, updated_visitors
+                    )
+    return updated_visitors
 
 
 def update_visitor_status(
     diagonal: LineString, int_line: LineString, ext_line: LineString, track_id: str, timestamp: float, visitors: dict
-) -> None:
+) -> dict:
     """Обновляет действия посетителя: вход, выход"""
 
-    if track_id not in visitors:
-        visitors[track_id] = []
+    updated_visitors = visitors.copy()
+    if track_id not in updated_visitors:
+        updated_visitors[track_id] = []
 
     # Проверка пересечения с линией входа (INT)
     if not diagonal.intersection(int_line).is_empty:
-        if not any(action["action"] == "INT" for action in visitors[track_id]):
-            visitors[track_id].append({"timestamp": timestamp, "action": "INT"})
+        if not any(action["action"] == "INT" for action in updated_visitors[track_id]):
+            updated_visitors[track_id].append({"timestamp": timestamp, "action": "INT"})
 
     # Проверка пересечения с линией выхода (EXT)
     elif not diagonal.intersection(ext_line).is_empty:
-        if not any(action["action"] == "EXT" for action in visitors[track_id]):
-            visitors[track_id].append({"timestamp": timestamp, "action": "EXT"})
+        if not any(action["action"] == "EXT" for action in updated_visitors[track_id]):
+            updated_visitors[track_id].append({"timestamp": timestamp, "action": "EXT"})
+
+    return updated_visitors
 
 
 def people_count(visitors: dict[str, list[dict[str, Any]]]) -> tuple[int, int, int]:
@@ -99,7 +103,6 @@ def people_count(visitors: dict[str, list[dict[str, Any]]]) -> tuple[int, int, i
 
     for track_id, actions in visitors.items():
         filtered_actions = filter_duplicate_actions(actions)
-
         for action in filtered_actions:
             if action["action"] == "INT" and track_id not in current_visitors:
                 entry_count += 1
@@ -116,12 +119,10 @@ def filter_duplicate_actions(actions: list[dict[str, Any]]) -> list[dict[str, An
 
     filtered = []
     last_action = None
-
     for action in actions:
         if action["action"] != last_action:
             filtered.append(action)
             last_action = action["action"]
-
     return filtered
 
 
@@ -138,7 +139,7 @@ def main():
     int_line, ext_line, frames, _, _ = get_configuration(data)
     visitors = {}
 
-    process_frames(int_line, ext_line, frames, visitors)
+    visitors = process_frames(int_line, ext_line, frames, visitors)
     entry_count, exit_count, visitors_in_shop = people_count(visitors)
 
     print(f"Вход: {entry_count}")
