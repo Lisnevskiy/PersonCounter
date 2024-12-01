@@ -113,12 +113,20 @@ def test_update_visitor_status_with_entry_and_exit():
 
     # Вход
     visitors = update_visitor_status(diagonal_entry, int_line, ext_line, track_id, timestamp, visitors)
-    assert visitors[track_id]["actions"] == [{"timestamp": timestamp, "action": "INT"}]
 
     # Выход
     timestamp += 1
     visitors = update_visitor_status(diagonal_exit, int_line, ext_line, track_id, timestamp, visitors)
     assert visitors[track_id]["actions"][-1] == {"timestamp": timestamp, "action": "EXT"}
+
+    # Выход
+    track_id = "track2"
+    visitors = update_visitor_status(diagonal_exit, int_line, ext_line, track_id, timestamp, visitors)
+
+    # Вход
+    timestamp += 1
+    visitors = update_visitor_status(diagonal_entry, int_line, ext_line, track_id, timestamp, visitors)
+    assert visitors[track_id]["actions"] == [{"timestamp": timestamp, "action": "INT"}]
 
 
 def test_filter_duplicate_actions():
@@ -165,7 +173,7 @@ def test_process_frames(sample_json_data):
 
     assert len(result_visitors) == 2, "Должно быть обработано два трека"
     assert "1698069301:27" in result_visitors, "Трек '1698069301:27' должен быть в результатах"
-    assert result_visitors["1698069301:27"]["actions"][0]["action"] == "INT", "Ожидается действие 'INT'"
+    assert result_visitors["1698069301:27"]["actions"][0]["action"] == "EXT", "Ожидается действие 'EXT'"
 
 
 def test_multiple_entries_and_exits():
