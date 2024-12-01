@@ -37,15 +37,10 @@ def get_configuration(
     ext_line = scale_to_line(lines["ext_line"], box_dimensions, frame_dimensions)
     int_line = scale_to_line(lines["int_line"], box_dimensions, frame_dimensions)
 
-
     return int_line, ext_line, frames, box_dimensions, frame_dimensions
 
 
-def scale_to_line(
-    coords: List[int], 
-    box_dimensions: Tuple[int, int], 
-    frame_dimensions: Tuple[int, int]
-) -> LineString:
+def scale_to_line(coords: List[int], box_dimensions: Tuple[int, int], frame_dimensions: Tuple[int, int]) -> LineString:
     """
     Масштабирует координаты и возвращает объект LineString.
 
@@ -126,7 +121,6 @@ def update_visitor_status(
             track_data["state"] = "ENTRY_CONFIRMED"
         else:
             track_data["state"] = "ENTRY_CROSSED"
-            track_data["actions"].append({"timestamp": timestamp, "action": "INT"})
 
     return visitors
 
@@ -159,7 +153,7 @@ def people_count(visitors: Dict[str, Any]) -> Tuple[int, int, int]:
 
 
 def filter_duplicate_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """ Убирает дублирующиеся действия для одного трека."""
+    """Убирает дублирующиеся действия для одного трека."""
     filtered = []
     last_action = None
     for action in actions:
