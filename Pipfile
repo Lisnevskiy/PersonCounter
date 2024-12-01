@@ -4,11 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-pytz = "*"
 shapely = "*"
 pytest = "*"
-opencv-python = "*"
-matplotlib = "*"
 
 [dev-packages]
 
