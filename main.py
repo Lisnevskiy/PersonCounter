@@ -1,10 +1,9 @@
 import json
-from typing import Any, Dict, List, Tuple
 
 from shapely.geometry import LineString
 
 
-def read_json(file_path: str) -> Dict[str, Any]:
+def read_json(file_path: str) -> dict:
     """Чтение данных из JSON файла."""
     try:
         with open(file_path, "r") as file:
@@ -14,9 +13,7 @@ def read_json(file_path: str) -> Dict[str, Any]:
         return {}
 
 
-def get_configuration(
-    data: Dict[str, Any]
-) -> Tuple[LineString, LineString, Dict[str, Any], Tuple[int, int], Tuple[int, int]]:
+def get_configuration(data: dict) -> tuple[LineString, LineString, dict]:
     """
     Извлекает конфигурацию линий, кадров и боксов из JSON.
 
@@ -29,7 +26,7 @@ def get_configuration(
     lines = cfg["cross_lines"][0]
     box_dimensions = tuple(lines["box"])
     frame_dimensions = (
-        cfg["video_frames"]["frame_width"],
+        cfg["video_frames"].get("frame_height", 640),
         cfg["video_frames"].get("frame_height", 360),
     )
     frames = nn_detect["frames"]
@@ -37,10 +34,10 @@ def get_configuration(
     ext_line = scale_to_line(lines["ext_line"], box_dimensions, frame_dimensions)
     int_line = scale_to_line(lines["int_line"], box_dimensions, frame_dimensions)
 
-    return int_line, ext_line, frames, box_dimensions, frame_dimensions
+    return int_line, ext_line, frames
 
 
-def scale_to_line(coords: List[int], box_dimensions: Tuple[int, int], frame_dimensions: Tuple[int, int]) -> LineString:
+def scale_to_line(coords: list[int], box_dimensions: tuple[int, int], frame_dimensions: tuple[int, int]) -> LineString:
     """
     Масштабирует координаты и возвращает объект LineString.
 
@@ -62,14 +59,7 @@ def scale_to_line(coords: List[int], box_dimensions: Tuple[int, int], frame_dime
     return LineString([(scaled[0], scaled[1]), (scaled[2], scaled[3])])
 
 
-def process_frames(
-    int_line: LineString,
-    ext_line: LineString,
-    frames: Dict[str, Any],
-    visitors: Dict[str, Any],
-    box_dimensions: Tuple[int, int],
-    frame_dimensions: Tuple[int, int],
-) -> Dict[str, Any]:
+def process_frames(int_line: LineString, ext_line: LineString, frames: dict, visitors: dict) -> dict:
     """
     Обрабатывает кадры и анализирует пересечения с линиями.
 
@@ -87,45 +77,59 @@ def process_frames(
             track_id_data = person[-1]
             if isinstance(track_id_data, dict) and list(track_id_data.values())[0].get("track_id"):
                 track_id = list(track_id_data.values())[0]["track_id"]
-                diagonal = scale_to_line(person[:4], box_dimensions, frame_dimensions)
+                x1, y1, x2, y2 = person[:4]
+
+                # Углы прямоугольника
+                top_left = (x1, y1)
+                bottom_right = (x2, y2)
+                top_right = (x2, y1)
+                bottom_left = (x1, y2)
+
+                # Построение диагоналей
+                diagonal_1 = LineString([top_left, bottom_right])  # Диагональ 1
+                diagonal_2 = LineString([top_right, bottom_left])  # Диагональ 2
+
                 visitors = update_visitor_status(
-                    diagonal, int_line, ext_line, track_id, frame_data["timestamp"], visitors
+                    diagonal_1, diagonal_2, int_line, ext_line, track_id, frame_data["timestamp"], visitors
                 )
     return visitors
 
 
 def update_visitor_status(
-    diagonal: LineString,
+    diagonal_1: LineString,
+    diagonal_2: LineString,
     int_line: LineString,
     ext_line: LineString,
     track_id: str,
     timestamp: float,
-    visitors: Dict[str, Any],
-) -> Dict[str, Any]:
+    visitors: dict,
+) -> dict:
     """Обновляет действия посетителя: вход, выход."""
     if track_id not in visitors:
         visitors[track_id] = {"actions": [], "state": None}
 
     track_data = visitors[track_id]
 
-    if diagonal.intersects(ext_line):
+    if diagonal_1.intersects(ext_line) or diagonal_2.intersects(ext_line):
         if track_data["state"] == "ENTRY_CROSSED":
             track_data["actions"].append({"timestamp": timestamp, "action": "EXT"})
             track_data["state"] = "EXIT_CONFIRMED"
+            return visitors
         else:
             track_data["state"] = "EXIT_CROSSED"
 
-    elif diagonal.intersects(int_line):
+    if diagonal_1.intersects(int_line) or diagonal_2.intersects(int_line):
         if track_data["state"] == "EXIT_CROSSED":
             track_data["actions"].append({"timestamp": timestamp, "action": "INT"})
             track_data["state"] = "ENTRY_CONFIRMED"
+            return visitors
         else:
             track_data["state"] = "ENTRY_CROSSED"
 
     return visitors
 
 
-def people_count(visitors: Dict[str, Any]) -> Tuple[int, int, int]:
+def people_count(visitors: dict) -> tuple[int, int, int]:
     """Подсчитывает количество вошедших, вышедших и текущих посетителей."""
     entry_count = 0
     exit_count = 0
@@ -134,14 +138,16 @@ def people_count(visitors: Dict[str, Any]) -> Tuple[int, int, int]:
 
     for track_id, data in visitors.items():
         actions = data["actions"]
+        if not actions:
+            continue
         filtered_actions = filter_duplicate_actions(actions)
 
         for action in filtered_actions:
-            if action["action"] == "INT":
+            if action == "INT":
                 if track_id not in current_visitors:
                     entry_count += 1
                     current_visitors.add(track_id)
-            elif action["action"] == "EXT":
+            elif action == "EXT":
                 if track_id in current_visitors:
                     exit_count += 1
                     current_visitors.remove(track_id)
@@ -152,14 +158,12 @@ def people_count(visitors: Dict[str, Any]) -> Tuple[int, int, int]:
     return entry_count, exit_count, len(current_visitors)
 
 
-def filter_duplicate_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def filter_duplicate_actions(actions: list[dict]) -> list[str]:
     """Убирает дублирующиеся действия для одного трека."""
     filtered = []
-    last_action = None
     for action in actions:
-        if action["action"] != last_action:
-            filtered.append(action)
-            last_action = action["action"]
+        if action["action"] not in filtered:
+            filtered.append(action["action"])
     return filtered
 
 
@@ -172,12 +176,12 @@ def main() -> None:
         return
 
     try:
-        int_line, ext_line, frames, box_dimensions, frame_dimensions = get_configuration(data)
+        int_line, ext_line, frames = get_configuration(data)
     except ValueError as e:
         print(f"Ошибка конфигурации: {e}")
         return
 
-    visitors = process_frames(int_line, ext_line, frames, {}, box_dimensions, frame_dimensions)
+    visitors = process_frames(int_line, ext_line, frames, {})
     entry_count, exit_count, visitors_in_shop = people_count(visitors)
 
     print(f"Вход: {entry_count}")
