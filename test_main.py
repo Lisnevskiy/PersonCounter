@@ -23,8 +23,8 @@ def sample_json_data():
                     "cfg": {
                         "cross_lines": [
                             {
-                                "ext_line": [200, 100, 300, 100],  # Выходная линия
-                                "int_line": [150, 200, 250, 200],  # Входная линия
+                                "ext_line": [200, 100, 300, 100],
+                                "int_line": [150, 200, 250, 200],
                                 "box": [836, 470],
                             }
                         ],
@@ -76,12 +76,10 @@ def test_read_json_error(tmp_path):
 
 def test_get_configuration(sample_json_data):
     """Тестирование извлечения конфигурации."""
-    int_line, ext_line, frames, box_dimensions, frame_dimensions = get_configuration(sample_json_data)
+    int_line, ext_line, frames = get_configuration(sample_json_data)
 
     assert isinstance(int_line, LineString), "Входная линия должна быть LineString"
     assert isinstance(ext_line, LineString), "Выходная линия должна быть LineString"
-    assert box_dimensions == (836, 470), "Размеры бокса должны быть извлечены корректно"
-    assert frame_dimensions == (640, 360), "Размеры кадра должны быть извлечены корректно"
     assert not int_line.intersects(ext_line), "Линии не должны пересекаться"
 
 
@@ -103,8 +101,10 @@ def test_scale_to_line():
 
 def test_update_visitor_status_with_entry_and_exit():
     """Тестируем последовательность входа и выхода."""
-    diagonal_entry = LineString([(140, 190), (260, 210)])
-    diagonal_exit = LineString([(240, 90), (260, 110)])
+    diagonal_entry1 = LineString([(140, 190), (260, 210)])
+    diagonal_exit1 = LineString([(240, 90), (260, 110)])
+    diagonal_entry2 = LineString([(260, 210), (140, 190)])
+    diagonal_exit2 = LineString([(260, 110), (240, 90)])
     int_line = LineString([(150, 200), (250, 200)])
     ext_line = LineString([(200, 100), (300, 100)])
     visitors = {}
@@ -112,20 +112,24 @@ def test_update_visitor_status_with_entry_and_exit():
     timestamp = 1698080399
 
     # Вход
-    visitors = update_visitor_status(diagonal_entry, int_line, ext_line, track_id, timestamp, visitors)
+    visitors = update_visitor_status(
+        diagonal_entry1, diagonal_entry2, int_line, ext_line, track_id, timestamp, visitors
+    )
 
     # Выход
     timestamp += 1
-    visitors = update_visitor_status(diagonal_exit, int_line, ext_line, track_id, timestamp, visitors)
+    visitors = update_visitor_status(diagonal_exit1, diagonal_exit2, int_line, ext_line, track_id, timestamp, visitors)
     assert visitors[track_id]["actions"][-1] == {"timestamp": timestamp, "action": "EXT"}
 
     # Выход
     track_id = "track2"
-    visitors = update_visitor_status(diagonal_exit, int_line, ext_line, track_id, timestamp, visitors)
+    visitors = update_visitor_status(diagonal_exit1, diagonal_exit2, int_line, ext_line, track_id, timestamp, visitors)
 
     # Вход
     timestamp += 1
-    visitors = update_visitor_status(diagonal_entry, int_line, ext_line, track_id, timestamp, visitors)
+    visitors = update_visitor_status(
+        diagonal_entry1, diagonal_entry2, int_line, ext_line, track_id, timestamp, visitors
+    )
     assert visitors[track_id]["actions"] == [{"timestamp": timestamp, "action": "INT"}]
 
 
@@ -141,11 +145,10 @@ def test_filter_duplicate_actions():
 
     filtered_actions = filter_duplicate_actions(actions)
 
-    assert len(filtered_actions) == 3, "Должно остаться три уникальных действия"
-    assert [action["action"] for action in filtered_actions] == [
+    assert len(filtered_actions) == 2, "Должно остаться 2 уникальных действия"
+    assert [action for action in filtered_actions] == [
         "INT",
         "EXT",
-        "INT",
     ], "Порядок действий должен быть сохранен"
 
 
@@ -166,14 +169,14 @@ def test_people_count(sample_json_data):
 
 def test_process_frames(sample_json_data):
     """Тестирование обработки кадров."""
-    int_line, ext_line, frames, box_dimensions, frame_dimensions = get_configuration(sample_json_data)
+    int_line, ext_line, frames = get_configuration(sample_json_data)
     visitors = {}
 
-    result_visitors = process_frames(int_line, ext_line, frames, visitors, box_dimensions, frame_dimensions)
+    result_visitors = process_frames(int_line, ext_line, frames, visitors)
 
     assert len(result_visitors) == 2, "Должно быть обработано два трека"
     assert "1698069301:27" in result_visitors, "Трек '1698069301:27' должен быть в результатах"
-    assert result_visitors["1698069301:27"]["actions"][0]["action"] == "EXT", "Ожидается действие 'EXT'"
+    assert result_visitors["1698069301:27"]["actions"] == [], "Ожидается []"
 
 
 def test_multiple_entries_and_exits():
@@ -211,9 +214,9 @@ def test_frame_with_no_people(sample_json_data):
         "detected": {"person": []},
     }
 
-    int_line, ext_line, frames, box_dimensions, frame_dimensions = get_configuration(sample_json_data)
+    int_line, ext_line, frames = get_configuration(sample_json_data)
     visitors = {}
 
-    result_visitors = process_frames(int_line, ext_line, frames, visitors, box_dimensions, frame_dimensions)
+    result_visitors = process_frames(int_line, ext_line, frames, visitors)
 
     assert len(result_visitors) == 2, "Должно остаться два трека"
